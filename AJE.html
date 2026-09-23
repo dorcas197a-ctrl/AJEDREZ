@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajedrez 2 Jugadores Profesional | Evaluador Avanzado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #0b0f19;
+            color: #f1f5f9;
+        }
+        .board-container {
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            aspect-ratio: 1 / 1;
+        }
+        .square {
+            position: relative;
+            user-select: none;
+            transition: background-color 0.15s ease;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .square.light {
+            background-color: #f0f3f6; 
+        }
+        .square.dark {
+            background-color: #94a3b8; 
+        }
+        .square.selected {
+            background-color: rgba(71, 85, 105, 0.9) !important;
+        }
+        .square.highlight-move::after {
+            content: '';
+            position: absolute;
+            width: 28%;
+            height: 28%;
+            background-color: rgba(30, 41, 59, 0.6);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .square.highlight-capture::after {
+            content: '';
+            position: absolute;
+            inset: 4px;
+            border: 4px solid rgba(30, 41, 59, 0.75);
+            border-radius: 4px;
+        }
+        .piece {
+            cursor: grab;
+            transition: transform 0.1s ease;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35));
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            line-height: 1;
+        }
+        .piece:active {
+            cursor: grabbing;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            70% { transform: scale(1.08); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .huge-eval-anim {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes floatUp {
+            0% { transform: translateY(100vh) scale(0.8); opacity: 1; }
+            100% { transform: translateY(-120vh) scale(1.2); opacity: 0; }
+        }
+        .balloon {
+            position: fixed;
+            bottom: -100px;
+            width: 40px;
+            height: 50px;
+            border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%;
+            animation: floatUp 4s ease-in-out infinite;
+            z-index: 100;
+        }
+        .balloon::after {
+            content: "";
+            position: absolute;
+            bottom: -12px;
+            left: 18px;
+            width: 2px;
+            height: 15px;
+            background-color: #cbd5e1;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col justify-between antialiased overflow-x-hidden">
+
+    <header class="bg-slate-900 border-b border-slate-800 py-3 px-6 flex items-center justify-between shadow-md">
+        <div class="flex items-center space-x-3">
+            <div class="bg-slate-800 text-slate-100 p-2.5 rounded-2xl shadow-lg border border-slate-700">
+                <i class="fa-solid fa-chess text-xl"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-base md:text-lg text-slate-100 tracking-wide">AJEDREZ 2 JUGADORES</h1>
+                <p class="text-xs text-slate-400">Modo Profesional con Control de Jaque Real</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button onclick="toggleFullScreen()" id="fullscreen-btn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-sm font-medium transition flex items-center space-x-2 border border-slate-700">
+                <i class="fa-solid fa-expand"></i>
+                <span class="hidden sm:inline">Pantalla Completa</span>
+            </button>
+            <button onclick="newGame()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition shadow-lg shadow-slate-900/30 flex items-center space-x-2 border border-slate-600">
+                <i class="fa-solid fa-rotate-right"></i>
+                <span>Reiniciar</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+        
+        <!-- Panel Izquierdo -->
+        <div class="lg:col-span-4 flex flex-col justify-between h-full space-y-4">
+            
+            <!-- Jugador 2 -->
+            <div class="bg-slate-800/90 backdrop-blur border border-slate-700/60 p-4 rounded-2xl shadow-xl flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-100 font-bold text-lg">
+                        👤
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-slate-200 text-sm md:text-base">Jugador 2 (Negras)</h2>
+                        <div class="flex items-center space-x-1 text-xs text-slate-400 mt-1 min-h-[24px]">
+                            <span id="opponent-captured" class="flex flex-wrap gap-1 text-base tracking-tighter"></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="clock-black" class="bg-slate-950 border border-slate-800 px-3 py-2 rounded-xl text-lg font-mono font-bold text-slate-200 tracking-wider shadow-inner">
+                    10:00
+                </div>
+            </div>
+
+            <!-- Barra de Ventaja -->
+            <div class="bg-slate-800/80 border border-slate-700/50 p-4 rounded-2xl shadow-inner">
+                <div class="flex justify-between items-center text-xs font-semibold text-slate-300 mb-2">
+                    <span id="white-advantage-label">⚪ Blancas: 50%</span>
+                    <span class="text-slate-400 uppercase tracking-wider text-[10px]">Ventaja</span>
+                    <span id="black-advantage-label">⚫ Negras: 50%</span>
+                </div>
+                <div class="w-full bg-slate-950 h-3.5 rounded-full overflow-hidden p-0.5 border border-slate-700 flex">
+                    <div id="advantage-bar-white" class="bg-slate-200 h-full rounded-l-full transition-all duration-500" style="width: 50%;"></div>
+                    <div id="advantage-bar-black" class="bg-slate-600 h-full rounded-r-full transition-all duration-500" style="width: 50%;"></div>
+                </div>
+            </div>
+
+            <!-- Alertas e Indicador de Turno/Jaque -->
+            <div class="bg-slate-800/70 border border-slate-700/50 p-4 rounded-2xl text-center flex flex-col items-center justify-center space-y-1">
+                <span id="turn-indicator" class="inline-flex items-center space-x-2 text-sm font-semibold text-slate-300">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="status-text">Turno de las Blancas</span>
+                </span>
+                <div id="check-alert-banner" class="text-rose-400 font-bold text-sm tracking-wider uppercase h-6 flex items-center justify-center animate-bounce"></div>
+            </div>
+
+            <!-- Historial -->
+            <div class="bg-slate-800/90 backdrop-blur border border-slate-700/60 rounded-2xl shadow-xl flex flex-col h-40 overflow-hidden">
+                <div class="bg-slate-900/70 px-4 py-2.5 border-b border-slate-700 flex justify-between items-center">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
+                        <i class="fa-solid fa-list-ol text-slate-400"></i>
+                        <span>Historial de Movimientos</span>
+                    </span>
+                </div>
+                <div id="move-history-container" class="flex-1 overflow-y-auto p-3 space-y-1 font-mono text-xs md:text-sm text-slate-300"></div>
+            </div>
+
+            <!-- Jugador 1 -->
+            <div class="bg-slate-800/90 backdrop-blur border border-slate-700/60 p-4 rounded-2xl shadow-xl flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-100 font-bold text-lg">
+                        👑
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-slate-200 text-sm md:text-base">Jugador 1 (Blancas)</h2>
+                        <div class="flex items-center space-x-1 text-xs text-slate-400 mt-1 min-h-[24px]">
+                            <span id="player-captured" class="flex flex-wrap gap-1 text-base tracking-tighter"></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="clock-white" class="bg-slate-950 border border-slate-800 px-3 py-2 rounded-xl text-lg font-mono font-bold text-slate-200 tracking-wider shadow-inner">
+                    10:00
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Columna Central: Tablero y Evaluador -->
+        <div class="col-span-1 lg:col-span-8 flex flex-col items-center justify-center w-full space-y-4">
+            
+            <div id="huge-eval-container" class="w-full max-w-[500px] bg-slate-800/90 border border-slate-700 rounded-2xl p-4 text-center shadow-xl min-h-[90px] flex flex-col justify-center items-center transition-all">
+                <span class="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Análisis de la Jugada</span>
+                <div id="huge-eval-title" class="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-200">
+                    Listo para jugar
+                </div>
+                <div id="huge-eval-desc" class="text-xs md:text-sm text-slate-400 mt-1">
+                    En el ajedrez el Rey NUNCA se come. Si está en Jaque, debes mover una pieza para defenderlo obligatoriamente.
+                </div>
+            </div>
+
+            <div class="board-container relative p-3 bg-slate-800 rounded-3xl border border-slate-700 shadow-2xl w-full max-w-[500px]">
+                <div id="chessboard" class="grid grid-cols-8 w-full h-full rounded-xl overflow-hidden border border-slate-700"></div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-center gap-3">
+                <button onclick="offerDraw()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2.5 rounded-xl font-medium text-sm transition border border-slate-700 shadow flex items-center space-x-2">
+                    <i class="fa-solid fa-handshake"></i>
+                    <span>Tablas</span>
+                </button>
+                <button onclick="resignGame()" class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 px-4 py-2.5 rounded-xl font-medium text-sm transition shadow flex items-center space-x-2">
+                    <i class="fa-solid fa-flag"></i>
+                    <span>Rendirse</span>
+                </button>
+                <button onclick="toggleSound()" id="sound-btn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 p-2.5 rounded-xl text-sm transition border border-slate-700 shadow">
+                    <i class="fa-solid fa-volume-high text-base"></i>
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <div id="gameover-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center hidden">
+        <div id="balloons-container" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+        <div class="relative bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-md w-full mx-4 text-center shadow-2xl z-10 huge-eval-anim">
+            <div class="w-20 h-20 rounded-3xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center text-4xl mx-auto mb-4 shadow-lg">
+                🏆
+            </div>
+            <h2 class="text-4xl font-extrabold text-amber-400 tracking-tight mb-2 drop-shadow">¡FIN DEL JUEGO!</h2>
+            <p id="gameover-desc" class="text-slate-300 text-base mb-6 font-medium">Jaque Mate impecable.</p>
+            <button onclick="newGame()" class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 py-3.5 rounded-2xl font-bold text-base transition shadow-xl">
+                Jugar Nueva Partida
+            </button>
+        </div>
+    </div>
+
+    <div id="custom-alert" class="fixed bottom-6 right-6 bg-slate-800 border border-slate-700 text-slate-200 px-5 py-3 rounded-2xl shadow-2xl z-50 transform translate-y-32 opacity-0 transition-all duration-300 flex items-center space-x-3">
+        <i id="alert-icon" class="fa-solid fa-info-circle text-slate-400"></i>
+        <span id="alert-message" class="text-sm font-medium">Notificación</span>
+    </div>
+
+    <script>
+        const pieceSymbols = {
+            'wP': '♙', 'wN': '♘', 'wB': '♗', 'wR': '♖', 'wQ': '♕', 'wK': '♔',
+            'bP': '♟', 'bN': '♞', 'bB': '♝', 'bR': '♜', 'bQ': '♛', 'bK': '♚'
+        };
+
+        const pieceValues = {
+            'P': 10, 'N': 35, 'B': 35, 'R': 55, 'Q': 100, 'K': 1000
+        };
+
+        let board = [];
+        let turn = 'w';
+        let selectedSquare = null;
+        let validMoves = [];
+        let moveHistory = [];
+        let capturedWhite = [];
+        let capturedBlack = [];
+        let gameActive = true;
+        let soundEnabled = true;
+        
+        let whiteTime = 600;
+        let blackTime = 600;
+        let timeLimit = 600;
+        let timerInterval = null;
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if (!soundEnabled) return;
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            if (type === 'move') {
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'capture') {
+                osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            } else if (type === 'check') {
+                osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                setTimeout(() => osc.frequency.setValueAtTime(500, audioCtx.currentTime + 0.1), 100);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.25);
+            } else if (type === 'win') {
+                osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+                setTimeout(() => osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.15), 150);
+                setTimeout(() => osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.3), 300);
+                setTimeout(() => osc.frequency.setValueAtTime(1046.50, audioCtx.currentTime + 0.45), 450);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.8);
+            }
+        }
+
+        function initBoard() {
+            board = [
+                ['bR', 'bN', 'bB', 'bQ', 'bK', 'bB', 'bN', 'bR'],
+                ['bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP'],
+                [null, null, null, null, null, null, null, null],
+                [null, null, null, null, null, null, null, null],
+                [null, null, null, null, null, null, null, null],
+                [null, null, null, null, null, null, null, null],
+                ['wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP'],
+                ['wR', 'wN', 'wB', 'wQ', 'wK', 'wB', 'wN', 'wR']
+            ];
+            turn = 'w';
+            selectedSquare = null;
+            validMoves = [];
+            moveHistory = [];
+            capturedWhite = [];
+            capturedBlack = [];
+            gameActive = true;
+            document.getElementById('move-history-container').innerHTML = '';
+            document.getElementById('gameover-modal').classList.add('hidden');
+            document.getElementById('check-alert-banner').textContent = '';
+            document.getElementById('huge-eval-title').textContent = 'Listo para jugar';
+            document.getElementById('huge-eval-desc').textContent = 'El rey NUNCA se captura. Cuando está en Jaque, estás obligado a salvarlo.';
+            document.getElementById('balloons-container').innerHTML = '';
+            
+            whiteTime = timeLimit;
+            blackTime = timeLimit;
+            startTimer();
+            renderBoard();
+            updateAdvantageBar();
+            updateUI();
+        }
+
+        function renderBoard() {
+            const container = document.getElementById('chessboard');
+            container.innerHTML = '';
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const squareDiv = document.createElement('div');
+                    const isLight = (r + c) % 2 === 0;
+                    squareDiv.className = `square ${isLight ? 'light' : 'dark'} cursor-pointer`;
+                    squareDiv.dataset.row = r;
+                    squareDiv.dataset.col = c;
+
+                    if (selectedSquare && selectedSquare.row === r && selectedSquare.col === c) {
+                        squareDiv.classList.add('selected');
+                    }
+
+                    const isValid = validMoves.find(m => m.row === r && m.col === c);
+                    if (isValid) {
+                        if (board[r][c] !== null) {
+                            squareDiv.classList.add('highlight-capture');
+                        } else {
+                            squareDiv.classList.add('highlight-move');
+                        }
+                    }
+
+                    const piece = board[r][c];
+                    if (piece) {
+                        const pieceSpan = document.createElement('span');
+                        pieceSpan.className = `piece select-none ${piece[0] === 'w' ? 'text-slate-900 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)]' : 'text-slate-950 drop-shadow-[0_1px_2px_rgba(255,255,255,0.5)]'}`;
+                        pieceSpan.textContent = pieceSymbols[piece];
+                        squareDiv.appendChild(pieceSpan);
+                    }
+
+                    squareDiv.addEventListener('click', () => handleSquareClick(r, c));
+                    container.appendChild(squareDiv);
+                }
+            }
+        }
+
+        function handleSquareClick(r, c) {
+            if (!gameActive) return;
+
+            const piece = board[r][c];
+
+            if (selectedSquare) {
+                const move = validMoves.find(m => m.row === r && m.col === c);
+                if (move) {
+                    executeMove(selectedSquare.row, selectedSquare.col, r, c);
+                    selectedSquare = null;
+                    validMoves = [];
+                    renderBoard();
+                    return;
+                }
+            }
+
+            if (piece && piece[0] === turn) {
+                selectedSquare = { row: r, col: c };
+                // Filtramos movimientos para que SOLO se permitan los que rompan el jaque / sean legales
+                validMoves = getLegalMovesForSquare(r, c);
+                
+                if (validMoves.length === 0 && isKingInCheck(board, turn)) {
+                    showAlert('⚠️ Tu Rey está en Jaque. Esta pieza no puede liberarlo.');
+                }
+                
+                renderBoard();
+            } else {
+                selectedSquare = null;
+                validMoves = [];
+                renderBoard();
+            }
+        }
+
+        // Obtiene movimientos brutos según la física de las piezas
+        function getRawMoves(currBoard, r, c) {
+            const piece = currBoard[r][c];
+            if (!piece) return [];
+            const type = piece[1];
+            const color = piece[0];
+            let moves = [];
+
+            const addMove = (nr, nc) => {
+                if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                    const target = currBoard[nr][nc];
+                    if (!target) {
+                        moves.push({ row: nr, col: nc });
+                    } else if (target[0] !== color) {
+                        moves.push({ row: nr, col: nc });
+                        return false;
+                    } else {
+                        return false;
+                    }
+                    return true;
+                }
+                return false;
+            };
+
+            if (type === 'P') {
+                const dir = color === 'w' ? -1 : 1;
+                const startRow = color === 'w' ? 6 : 1;
+                if (r + dir >= 0 && r + dir < 8 && !currBoard[r + dir][c]) {
+                    moves.push({ row: r + dir, col: c });
+                    if (r === startRow && !currBoard[r + 2 * dir][c]) {
+                        moves.push({ row: r + 2 * dir, col: c });
+                    }
+                }
+                [-1, 1].forEach(dc => {
+                    const nr = r + dir;
+                    const nc = c + dc;
+                    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                        const target = currBoard[nr][nc];
+                        if (target && target[0] !== color) {
+                            moves.push({ row: nr, col: nc });
+                        }
+                    }
+                });
+            } else if (type === 'N') {
+                const offsets = [
+                    [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                    [1, -2], [1, 2], [2, -1], [2, 1]
+                ];
+                offsets.forEach(([dr, dc]) => {
+                    const nr = r + dr;
+                    const nc = c + dc;
+                    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                        const target = currBoard[nr][nc];
+                        if (!target || target[0] !== color) {
+                            moves.push({ row: nr, col: nc });
+                        }
+                    }
+                });
+            } else if (type === 'B' || type === 'R' || type === 'Q') {
+                let dirs = [];
+                if (type === 'B' || type === 'Q') dirs.push([-1, -1], [-1, 1], [1, -1], [1, 1]);
+                if (type === 'R' || type === 'Q') dirs.push([-1, 0], [1, 0], [0, -1], [0, 1]);
+                
+                dirs.forEach(([dr, dc]) => {
+                    let nr = r + dr;
+                    let nc = c + dc;
+                    while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                        const cont = addMove(nr, nc);
+                        if (cont === false) break;
+                        nr += dr;
+                        nc += dc;
+                    }
+                });
+            } else if (type === 'K') {
+                const dirs = [
+                    [-1, -1], [-1, 0], [-1, 1],
+                    [0, -1], [0, 1],
+                    [1, -1], [1, 0], [1, 1]
+                ];
+                dirs.forEach(([dr, dc]) => {
+                    const nr = r + dr;
+                    const nc = c + dc;
+                    if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+                        const target = currBoard[nr][nc];
+                        if (!target || target[0] !== color) {
+                            moves.push({ row: nr, col: nc });
+                        }
+                    }
+                });
+            }
+            return moves;
+        }
+
+        // Filtra los movimientos asegurando que NO DEJEN NI MANTENGAN al Rey en Jaque
+        function getLegalMovesForSquare(r, c) {
+            const rawMoves = getRawMoves(board, r, c);
+            const legalMoves = [];
+            const playerColor = board[r][c][0];
+
+            for (let m of rawMoves) {
+                // Simular movimiento
+                const tempBoard = board.map(row => [...row]);
+                tempBoard[m.row][m.col] = tempBoard[r][c];
+                tempBoard[r][c] = null;
+
+                // Si tras el movimiento el rey NO está en jaque, la jugada es válida
+                if (!isKingInCheck(tempBoard, playerColor)) {
+                    legalMoves.push(m);
+                }
+            }
+            return legalMoves;
+        }
+
+        function isKingInCheck(colorBoard, kingColor) {
+            let kingPos = null;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (colorBoard[r][c] === kingColor + 'K') {
+                        kingPos = { row: r, col: c };
+                        break;
+                    }
+                }
+                if (kingPos) break;
+            }
+            if (!kingPos) return false;
+
+            const enemyColor = kingColor === 'w' ? 'b' : 'w';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (colorBoard[r][c] && colorBoard[r][c][0] === enemyColor) {
+                        const moves = getRawMoves(colorBoard, r, c);
+                        if (moves.some(m => m.row === kingPos.row && m.col === kingPos.col)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function hasAnyLegalMoves(playerColor) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (board[r][c] && board[r][c][0] === playerColor) {
+                        const moves = getLegalMovesForSquare(r, c);
+                        if (moves.length > 0) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function classifyMove(piece, target, fromR, fromC, toR, toC, isCheckGiven) {
+            let score = 0;
+            let isCapture = target !== null;
+            let capturedVal = isCapture ? pieceValues[target[1]] : 0;
+            let movingVal = pieceValues[piece[1]];
+
+            let reasons = [];
+
+            if (isCapture) {
+                score += capturedVal;
+                reasons.push(`capturas una pieza rival (${pieceSymbols[target]}) ganando ventaja.`);
+            }
+
+            if (toR >= 2 && toR <= 5 && toC >= 2 && toC <= 5) {
+                score += 8;
+                reasons.push(`ocupas casillas estratégicas en el centro.`);
+            }
+
+            if (isCheckGiven) {
+                score += 25;
+                reasons.push(`¡Pones al Rey contrario en JAQUE! El rival está obligado a defenderlo.`);
+            }
+
+            if (reasons.length === 0) {
+                reasons.push(`desarrollas tus fichas para una mejor postura táctica.`);
+            }
+
+            if (score >= 25 || isCheckGiven) {
+                return {
+                    title: '¡GENIAL!',
+                    desc: `Movimiento de alta presión: ${reasons.join(' ')}`,
+                    color: 'text-amber-400',
+                    bg: 'bg-amber-500/10 border-amber-500/30'
+                };
+            } else if (score >= 10) {
+                return {
+                    title: 'EXCELENTE',
+                    desc: `Buena jugada: ${reasons.join(' ')}`,
+                    color: 'text-emerald-400',
+                    bg: 'bg-emerald-500/10 border-emerald-500/30'
+                };
+            } else {
+                return {
+                    title: 'BUENO',
+                    desc: `Paso defensivo/desarrollo: ${reasons.join(' ')}`,
+                    color: 'text-teal-400',
+                    bg: 'bg-teal-500/10 border-teal-500/30'
+                };
+            }
+        }
+
+        function executeMove(fromR, fromC, toR, toC) {
+            const piece = board[fromR][fromC];
+            const target = board[toR][toC];
+
+            if (target) {
+                playSound('capture');
+                if (target[0] === 'w') capturedWhite.push(target[1]);
+                else capturedBlack.push(target[1]);
+            } else {
+                playSound('move');
+            }
+
+            const nextTurnColor = turn === 'w' ? 'b' : 'w';
+            
+            if (piece[1] === 'P' && (toR === 0 || toR === 7)) {
+                board[toR][toC] = piece[0] + 'Q';
+            } else {
+                board[toR][toC] = piece;
+            }
+            board[fromR][fromC] = null;
+
+            const inCheck = isKingInCheck(board, nextTurnColor);
+            if (inCheck) {
+                playSound('check');
+            }
+
+            const evaluation = classifyMove(piece, target, fromR, fromC, toR, toC, inCheck);
+            showHugeEvaluation(evaluation);
+
+            const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+            const moveStr = `${piece[1] !== 'P' ? piece[1] : ''}${files[fromC]}${8 - fromR}-${files[toC]}${8 - toR}${inCheck ? '+' : ''}`;
+            moveHistory.push({ move: moveStr, color: turn, eval: evaluation.title });
+            appendMoveToLog(moveStr, turn, evaluation.title);
+
+            turn = nextTurnColor;
+            updateAdvantageBar();
+            updateUI();
+
+            // Verificación de estado de Jaque y Jaque Mate
+            const currentInCheck = isKingInCheck(board, turn);
+            const hasMoves = hasAnyLegalMoves(turn);
+
+            const checkBanner = document.getElementById('check-alert-banner');
+            
+            if (currentInCheck && hasMoves) {
+                checkBanner.textContent = '⚠️ ¡JAQUE! DEBES LIBERAR AL REY';
+                showAlert('⚠️ ¡Atención! Tu Rey está atacado, solo puedes mover piezas que lo salven.');
+            } else {
+                checkBanner.textContent = '';
+            }
+
+            if (currentInCheck && !hasMoves) {
+                gameActive = false;
+                clearInterval(timerInterval);
+                playSound('win');
+                const winner = turn === 'w' ? 'Jugador 2 (Negras)' : 'Jugador 1 (Blancas)';
+                showGameOverCelebration(`¡JAQUE MATE! ${winner} gana la partida. El Rey amenazado no tiene escapatoria ni fichas para defenderlo.`);
+            } else if (!currentInCheck && !hasMoves) {
+                gameActive = false;
+                clearInterval(timerInterval);
+                showGameOverCelebration('¡Tablas por Rey Ahogado! El jugador no tiene movimientos válidos.');
+            }
+        }
+
+        function showHugeEvaluation(evaluation) {
+            const container = document.getElementById('huge-eval-container');
+            container.className = `w-full max-w-[500px] border rounded-2xl p-4 text-center shadow-xl min-h-[90px] flex flex-col justify-center items-center transition-all huge-eval-anim ${evaluation.bg}`;
+            document.getElementById('huge-eval-title').className = `text-2xl md:text-3xl font-extrabold tracking-tight ${evaluation.color}`;
+            document.getElementById('huge-eval-title').textContent = evaluation.title;
+            document.getElementById('huge-eval-desc').textContent = evaluation.desc;
+        }
+
+        function updateAdvantageBar() {
+            let whiteScore = 0;
+            let blackScore = 0;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = board[r][c];
+                    if (p) {
+                        const val = pieceValues[p[1]] || 0;
+                        if (p[0] === 'w') whiteScore += val;
+                        else blackScore += val;
+                    }
+                }
+            }
+
+            capturedBlack.forEach(p => whiteScore += (pieceValues[p] || 0) * 0.3);
+            capturedWhite.forEach(p => blackScore += (pieceValues[p] || 0) * 0.3);
+
+            const total = whiteScore + blackScore;
+            let whitePct = Math.round((whiteScore / total) * 100);
+            let blackPct = 100 - whitePct;
+
+            if (isNaN(whitePct)) { whitePct = 50; blackPct = 50; }
+
+            document.getElementById('advantage-bar-white').style.width = `${whitePct}%`;
+            document.getElementById('advantage-bar-black').style.width = `${blackPct}%`;
+
+            document.getElementById('white-advantage-label').innerHTML = `<span>⚪ Blancas: ${whitePct}%</span>`;
+            document.getElementById('black-advantage-label').innerHTML = `<span>⚫ Negras: ${blackPct}%</span>`;
+        }
+
+        function updateUI() {
+            const statusText = document.getElementById('status-text');
+            if (turn === 'w') {
+                statusText.textContent = 'Turno del Jugador 1 (Blancas)';
+            } else {
+                statusText.textContent = 'Turno del Jugador 2 (Negras)';
+            }
+
+            document.getElementById('player-captured').innerHTML = capturedBlack.map(p => `<span class="text-slate-200 bg-slate-700/60 px-1 rounded">${pieceSymbols['b' + p]}</span>`).join('');
+            document.getElementById('opponent-captured').innerHTML = capturedWhite.map(p => `<span class="text-slate-200 bg-slate-700/60 px-1 rounded">${pieceSymbols['w' + p]}</span>`).join('');
+        }
+
+        function appendMoveToLog(moveStr, color, evalTitle) {
+            const container = document.getElementById('move-history-container');
+            const turnNum = Math.ceil(moveHistory.length / 2);
+            
+            if (color === 'w') {
+                const row = document.createElement('div');
+                row.className = 'grid grid-cols-2 gap-2 text-xs py-1 border-b border-slate-700/50 items-center';
+                row.id = `turn-${turnNum}`;
+                row.innerHTML = `<span class="text-slate-400 font-bold">${turnNum}. <span class="text-slate-200 font-mono">${moveStr}</span> <span class="text-[10px] opacity-75 text-amber-300">(${evalTitle})</span></span><span></span>`;
+                container.appendChild(row);
+            } else {
+                const row = document.getElementById(`turn-${turnNum}`);
+                if (row) {
+                    const blackSpan = row.querySelectorAll('span')[1];
+                    blackSpan.className = 'text-slate-200 font-mono';
+                    blackSpan.innerHTML = `${moveStr} <span class="text-[10px] opacity-75 text-amber-300">(${evalTitle})</span>`;
+                }
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            if (timeLimit === 0) return;
+
+            timerInterval = setInterval(() => {
+                if (!gameActive) return;
+                if (turn === 'w') {
+                    whiteTime--;
+                    if (whiteTime <= 0) {
+                        whiteTime = 0;
+                        gameActive = false;
+                        showGameOverCelebration('¡Tiempo agotado! Jugador 2 (Negras) gana.');
+                    }
+                } else {
+                    blackTime--;
+                    if (blackTime <= 0) {
+                        blackTime = 0;
+                        gameActive = false;
+                        showGameOverCelebration('¡Tiempo agotado! Jugador 1 (Blancas) gana.');
+                    }
+                }
+                updateClocks();
+            }, 1000);
+        }
+
+        function updateClocks() {
+            const formatTime = (secs) => {
+                const m = Math.floor(secs / 60);
+                const s = secs % 60;
+                return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            };
+            document.getElementById('clock-white').textContent = formatTime(whiteTime);
+            document.getElementById('clock-black').textContent = formatTime(blackTime);
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+                document.getElementById('fullscreen-btn').innerHTML = '<i class="fa-solid fa-compress"></i><span class="hidden sm:inline">Restaurar</span>';
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                document.getElementById('fullscreen-btn').innerHTML = '<i class="fa-solid fa-expand"></i><span class="hidden sm:inline">Pantalla Completa</span>';
+            }
+        }
+
+        function showGameOverCelebration(message) {
+            document.getElementById('gameover-desc').textContent = message;
+            document.getElementById('gameover-modal').classList.remove('hidden');
+            
+            const container = document.getElementById('balloons-container');
+            container.innerHTML = '';
+            const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#ef4444'];
+            for (let i = 0; i < 20; i++) {
+                const balloon = document.createElement('div');
+                balloon.className = 'balloon';
+                balloon.style.left = `${Math.random() * 100}%`;
+                balloon.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                balloon.style.animationDuration = `${3 + Math.random() * 3}s`;
+                balloon.style.animationDelay = `${Math.random() * 2}s`;
+                container.appendChild(balloon);
+            }
+        }
+
+        function newGame() {
+            initBoard();
+            showAlert('Nueva partida iniciada');
+        }
+
+        function offerDraw() {
+            showAlert('Tablas acordadas.');
+            gameActive = false;
+            showGameOverCelebration('Partida finalizada en tablas por acuerdo mutuo.');
+        }
+
+        function resignGame() {
+            const loser = turn === 'w' ? 'Jugador 1 (Blancas)' : 'Jugador 2 (Negras)';
+            gameActive = false;
+            showGameOverCelebration(`${loser} se rindieron. ¡Victoria para el rival!`);
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const btn = document.getElementById('sound-btn');
+            btn.innerHTML = soundEnabled ? '<i class="fa-solid fa-volume-high text-base"></i>' : '<i class="fa-solid fa-volume-xmark text-base text-slate-400"></i>';
+            showAlert(soundEnabled ? 'Sonido activado' : 'Sonido desactivado');
+        }
+
+        function showAlert(msg) {
+            const alertBox = document.getElementById('custom-alert');
+            document.getElementById('alert-message').textContent = msg;
+            alertBox.classList.remove('translate-y-32', 'opacity-0');
+            setTimeout(() => {
+                alertBox.classList.add('translate-y-32', 'opacity-0');
+            }, 3000);
+        }
+
+        window.onload = function() {
+            initBoard();
+        };
+    </script>
+</body>
+</html>
